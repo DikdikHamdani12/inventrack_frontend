@@ -31,7 +31,7 @@
             </div>
         @endif
 
-        <form action="#" method="POST">
+        <form action="{{ route('authenticate') }}" method="POST">
             @csrf
             <div class="mb-4">
                 <label for="username" class="block text-slate-700 font-medium mb-2">Username</label>
