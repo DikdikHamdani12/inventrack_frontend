@@ -2,86 +2,62 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BarangMasuk;
-use App\Models\Barang;
-use App\Models\Kategori;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class BarangMasukController extends Controller
 {
+    private function getApiUrl() { return env('API_URL'); }
+    private function getToken() { return session('api_token'); }
+
     public function index(Request $request)
     {
-        $query = BarangMasuk::with('barang');
-        
-        if ($request->has('search')) {
-            $query->whereHas('barang', function($q) use ($request) {
-                $q->where('nama_barang', 'like', '%' . $request->search . '%');
-            });
+        $response = Http::withToken($this->getToken())->get($this->getApiUrl() . '/barang-masuk', [
+            'search' => $request->search,
+            'page' => $request->page
+        ]);
+
+        if ($response->successful() && $response->json('success')) {
+            $data = $response->json('data');
+            
+            $barangMasuksData = $data['barangMasuks'];
+            $barangMasuks = new LengthAwarePaginator(
+                json_decode(json_encode($barangMasuksData['data'])),
+                $barangMasuksData['total'],
+                $barangMasuksData['per_page'],
+                $barangMasuksData['current_page'],
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+
+            $barangs = json_decode(json_encode($data['barangs']));
+            $kategoris = json_decode(json_encode($data['kategoris']));
+
+            return view('barang_masuk.index', compact('barangMasuks', 'barangs', 'kategoris'));
         }
-        
-        $barangs = Barang::all();
-        $kategoris = Kategori::orderBy('nama_kategori')->get();
-        $barangMasuks = $query->latest()->paginate(10)->withQueryString();
-        
-        return view('barang_masuk.index', compact('barangMasuks', 'barangs', 'kategoris'));
+
+        return back()->with('error', 'Gagal mengambil data dari API.');
     }
 
     public function store(Request $request)
     {
-        // Jika sedang menginput barang baru (bukan memilih dari daftar)
-        if ($request->is_new_barang) {
-            $request->validate([
-                'nama_barang' => 'required|string|max:255|unique:barangs,nama_barang',
-                'kategori_id' => 'required|exists:kategoris,id',
-                'satuan' => 'required|string|max:50',
-                'harga_satuan' => 'required|numeric|min:0',
-                'tanggal' => 'required|date',
-                'jumlah' => 'required|integer|min:1',
-            ]);
+        $response = Http::withToken($this->getToken())->post($this->getApiUrl() . '/barang-masuk', $request->all());
 
-            $barang = Barang::create([
-                'nama_barang' => $request->nama_barang,
-                'kategori_id' => $request->kategori_id,
-                'satuan' => $request->satuan,
-                'harga_satuan' => $request->harga_satuan,
-                'stok' => 0, // Akan ditambah di bawah
-            ]);
-
-            $barang_id = $barang->id;
-        } else {
-            $request->validate([
-                'barang_id' => 'required|exists:barangs,id',
-                'tanggal' => 'required|date',
-                'jumlah' => 'required|integer|min:1',
-            ]);
-
-            $barang_id = $request->barang_id;
-            $barang = Barang::find($barang_id);
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('barang-masuk.index')->with('success', $response->json('message'));
         }
 
-        // Create transaction
-        BarangMasuk::create([
-            'barang_id' => $barang_id,
-            'tanggal' => $request->tanggal,
-            'jumlah' => $request->jumlah
-        ]);
-
-        // Update Stok
-        $barang->stok += $request->jumlah;
-        $barang->save();
-
-        return redirect()->route('barang-masuk.index')->with('success', 'Transaksi barang masuk berhasil ditambahkan.');
+        return back()->with('error', 'Gagal menambah data transaksi.');
     }
 
-    public function destroy(BarangMasuk $barang_masuk)
+    public function destroy($id)
     {
-        // Revert stok
-        $barang = $barang_masuk->barang;
-        $barang->stok -= $barang_masuk->jumlah;
-        $barang->save();
+        $response = Http::withToken($this->getToken())->delete($this->getApiUrl() . '/barang-masuk/' . $id);
 
-        $barang_masuk->delete();
-        
-        return redirect()->route('barang-masuk.index')->with('success', 'Transaksi barang masuk berhasil dibatalkan.');
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('barang-masuk.index')->with('success', $response->json('message'));
+        }
+
+        return back()->with('error', 'Gagal membatalkan transaksi.');
     }
 }

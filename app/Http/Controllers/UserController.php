@@ -2,85 +2,79 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class UserController extends Controller
 {
+    private function getApiUrl() { return env('API_URL'); }
+    private function getToken() { return session('api_token'); }
+
     public function index(Request $request)
     {
-        // Pastikan hanya admin yang bisa akses
-        if (auth()->user()->role !== 'admin') {
+        $response = Http::withToken($this->getToken())->get($this->getApiUrl() . '/user', [
+            'search' => $request->search,
+            'page' => $request->page
+        ]);
+
+        if ($response->successful() && $response->json('success')) {
+            $data = $response->json('data');
+            
+            $usersData = $data['users'];
+            $users = new LengthAwarePaginator(
+                json_decode(json_encode($usersData['data'])),
+                $usersData['total'],
+                $usersData['per_page'],
+                $usersData['current_page'],
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+
+            return view('users.index', compact('users'));
+        }
+
+        // Catch 403 Forbidden from API
+        if ($response->status() === 403) {
             abort(403, 'Akses ditolak.');
         }
 
-        $query = User::query();
-        if ($request->has('search') && $request->search) {
-            $query->where('name', 'like', '%' . $request->search . '%')
-                  ->orWhere('username', 'like', '%' . $request->search . '%');
-        }
-
-        $users = $query->latest()->paginate(10)->withQueryString();
-        return view('users.index', compact('users'));
+        return back()->with('error', 'Gagal mengambil data dari API.');
     }
 
     public function store(Request $request)
     {
-        if (auth()->user()->role !== 'admin') abort(403);
+        $response = Http::withToken($this->getToken())->post($this->getApiUrl() . '/user', $request->all());
 
-        $request->validate([
-            'name'     => 'required|string|max:255',
-            'username' => 'required|string|max:100|unique:users,username',
-            'password' => 'required|string|min:6',
-            'role'     => 'required|in:admin,staff',
-        ]);
-
-        User::create([
-            'name'     => $request->name,
-            'username' => $request->username,
-            'password' => Hash::make($request->password),
-            'role'     => $request->role,
-        ]);
-
-        return redirect()->route('users.index')->with('success', 'User berhasil ditambahkan.');
-    }
-
-    public function update(Request $request, User $user)
-    {
-        if (auth()->user()->role !== 'admin') abort(403);
-
-        $request->validate([
-            'name'     => 'required|string|max:255',
-            'username' => 'required|string|max:100|unique:users,username,' . $user->id,
-            'role'     => 'required|in:admin,staff',
-            'password' => 'nullable|string|min:6',
-        ]);
-
-        $data = [
-            'name'     => $request->name,
-            'username' => $request->username,
-            'role'     => $request->role,
-        ];
-
-        if ($request->filled('password')) {
-            $data['password'] = Hash::make($request->password);
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('user.index')->with('success', $response->json('message'));
         }
 
-        $user->update($data);
-
-        return redirect()->route('users.index')->with('success', 'Data user berhasil diperbarui.');
+        return back()->with('error', 'Gagal menambah data.');
     }
 
-    public function destroy(User $user)
+    public function update(Request $request, $id)
     {
-        if (auth()->user()->role !== 'admin') abort(403);
+        $response = Http::withToken($this->getToken())->put($this->getApiUrl() . '/user/' . $id, $request->all());
 
-        if ($user->id === auth()->id()) {
-            return redirect()->route('users.index')->with('error', 'Anda tidak dapat menghapus akun sendiri.');
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('user.index')->with('success', $response->json('message'));
         }
 
-        $user->delete();
-        return redirect()->route('users.index')->with('success', 'User berhasil dihapus.');
+        return back()->with('error', 'Gagal mengupdate data.');
+    }
+
+    public function destroy($id)
+    {
+        $response = Http::withToken($this->getToken())->delete($this->getApiUrl() . '/user/' . $id);
+
+        if ($response->successful()) {
+            if ($response->json('success')) {
+                return redirect()->route('user.index')->with('success', $response->json('message'));
+            } else {
+                return redirect()->route('user.index')->with('error', $response->json('message'));
+            }
+        }
+
+        return back()->with('error', 'Gagal menghapus data.');
     }
 }

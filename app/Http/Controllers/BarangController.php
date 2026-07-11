@@ -2,60 +2,72 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Barang;
-use App\Models\Kategori;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class BarangController extends Controller
 {
+    private function getApiUrl() { return env('API_URL'); }
+    private function getToken() { return session('api_token'); }
+
     public function index(Request $request)
     {
-        $query = Barang::with('kategori');
-        if ($request->has('search')) {
-            $query->where('nama_barang', 'like', '%' . $request->search . '%')
-                  ->orWhereHas('kategori', function($q) use ($request) {
-                      $q->where('nama_kategori', 'like', '%' . $request->search . '%');
-                  });
+        $response = Http::withToken($this->getToken())->get($this->getApiUrl() . '/barang', [
+            'search' => $request->search,
+            'page' => $request->page
+        ]);
+
+        if ($response->successful() && $response->json('success')) {
+            $data = $response->json('data');
+            
+            $barangsData = $data['barangs'];
+            $barangs = new LengthAwarePaginator(
+                json_decode(json_encode($barangsData['data'])),
+                $barangsData['total'],
+                $barangsData['per_page'],
+                $barangsData['current_page'],
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+
+            $kategoris = json_decode(json_encode($data['kategoris']));
+
+            return view('barang.index', compact('barangs', 'kategoris'));
         }
 
-        $barangs = $query->latest()->paginate(10)->withQueryString();
-        $kategoris = Kategori::orderBy('nama_kategori')->get();
-        return view('barang.index', compact('barangs', 'kategoris'));
+        return back()->with('error', 'Gagal mengambil data dari API.');
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'nama_barang' => 'required|string|max:255',
-            'kategori_id' => 'required|exists:kategoris,id',
-            'stok' => 'required|integer|min:0',
-            'satuan' => 'required|string|max:50',
-            'harga_satuan' => 'required|numeric|min:0',
-        ]);
+        $response = Http::withToken($this->getToken())->post($this->getApiUrl() . '/barang', $request->all());
 
-        Barang::create($request->all());
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('barang.index')->with('success', $response->json('message'));
+        }
 
-        return redirect()->route('barang.index')->with('success', 'Barang berhasil ditambahkan.');
+        return back()->with('error', 'Gagal menambah data.');
     }
 
-    public function update(Request $request, Barang $barang)
+    public function update(Request $request, $id)
     {
-        $request->validate([
-            'nama_barang' => 'required|string|max:255',
-            'kategori_id' => 'required|exists:kategoris,id',
-            'stok' => 'required|integer|min:0',
-            'satuan' => 'required|string|max:50',
-            'harga_satuan' => 'required|numeric|min:0',
-        ]);
+        $response = Http::withToken($this->getToken())->put($this->getApiUrl() . '/barang/' . $id, $request->all());
 
-        $barang->update($request->all());
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('barang.index')->with('success', $response->json('message'));
+        }
 
-        return redirect()->route('barang.index')->with('success', 'Data barang berhasil diupdate.');
+        return back()->with('error', 'Gagal mengupdate data.');
     }
 
-    public function destroy(Barang $barang)
+    public function destroy($id)
     {
-        $barang->delete();
-        return redirect()->route('barang.index')->with('success', 'Barang berhasil dihapus.');
+        $response = Http::withToken($this->getToken())->delete($this->getApiUrl() . '/barang/' . $id);
+
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('barang.index')->with('success', $response->json('message'));
+        }
+
+        return back()->with('error', 'Gagal menghapus data.');
     }
 }

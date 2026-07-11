@@ -46,7 +46,7 @@
                         <td class="px-6 py-4 text-right font-medium text-slate-600">Rp {{ number_format($trx->barang->harga_satuan, 0, ',', '.') }}</td>
                         <td class="px-6 py-4 text-right font-bold text-rose-700">Rp {{ number_format($trx->jumlah * $trx->barang->harga_satuan, 0, ',', '.') }}</td>
                         <td class="px-6 py-4 text-center">
-                            @if(auth()->user()->role == 'admin')
+                            @if(isset($loggedUser) && $loggedUser['role'] == 'admin')
                             <button @click="deleteUrl = '{{ route('barang-keluar.destroy', $trx->id) }}'; deleteName = '{{ $trx->barang->nama_barang }}'; deleteModal = true" class="text-rose-500 hover:text-white hover:bg-rose-500 border border-transparent hover:border-rose-600 px-3 py-1.5 rounded text-xs font-medium transition flex items-center m-auto">
                                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                 Batalkan
