@@ -52,7 +52,7 @@
             </div>
             <h3 class="text-slate-500 font-medium">Saldo Kas Saat Ini</h3>
         </div>
-        <div class="text-2xl font-bold text-emerald-700">Rp {{ number_format(\App\Models\Saldo::getRunningSaldo(), 0, ',', '.') }}</div>
+        <div class="text-2xl font-bold text-emerald-700">Rp {{ number_format($runningSaldo, 0, ',', '.') }}</div>
         <div class="text-sm text-slate-500 mt-1">Status Peringatan: <span class="font-semibold {{ $stokMenipis > 0 ? 'text-red-500' : 'text-emerald-600' }}">{{ $stokMenipis }} Stok Menipis</span></div>
     </div>
 </div>

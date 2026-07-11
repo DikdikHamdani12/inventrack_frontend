@@ -2,62 +2,70 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BarangKeluar;
-use App\Models\Barang;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class BarangKeluarController extends Controller
 {
+    private function getApiUrl() { return env('API_URL'); }
+    private function getToken() { return session('api_token'); }
+
     public function index(Request $request)
     {
-        $query = BarangKeluar::with('barang');
-        
-        if ($request->has('search')) {
-            $query->whereHas('barang', function($q) use ($request) {
-                $q->where('nama_barang', 'like', '%' . $request->search . '%');
-            });
+        $response = Http::withToken($this->getToken())->get($this->getApiUrl() . '/barang-keluar', [
+            'search' => $request->search,
+            'page' => $request->page
+        ]);
+
+        if ($response->successful() && $response->json('success')) {
+            $data = $response->json('data');
+            
+            $barangKeluarsData = $data['barangKeluars'];
+            $barangKeluars = new LengthAwarePaginator(
+                json_decode(json_encode($barangKeluarsData['data'])),
+                $barangKeluarsData['total'],
+                $barangKeluarsData['per_page'],
+                $barangKeluarsData['current_page'],
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+
+            $barangs = json_decode(json_encode($data['barangs']));
+
+            return view('barang_keluar.index', compact('barangKeluars', 'barangs'));
         }
-        
-        // Hanya tampilkan barang yang punya stok
-        $barangs = Barang::where('stok', '>', 0)->get();
-        $barangKeluars = $query->latest()->paginate(10)->withQueryString();
-        
-        return view('barang_keluar.index', compact('barangKeluars', 'barangs'));
+
+        return back()->with('error', 'Gagal mengambil data dari API.');
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'barang_id' => 'required|exists:barangs,id',
-            'tanggal' => 'required|date',
-            'jumlah' => 'required|integer|min:1',
-        ]);
+        $response = Http::withToken($this->getToken())->post($this->getApiUrl() . '/barang-keluar', $request->all());
 
-        $barang = Barang::find($request->barang_id);
-
-        if ($request->jumlah > $barang->stok) {
-            return back()->withErrors(['jumlah' => 'Stok tidak mencukupi! Stok saat ini: ' . $barang->stok])->withInput();
+        if ($response->successful()) {
+            if ($response->json('success')) {
+                return redirect()->route('barang-keluar.index')->with('success', $response->json('message'));
+            } else {
+                return back()->withErrors(['jumlah' => $response->json('message')])->withInput();
+            }
+        }
+        
+        // Handle 400 Bad Request if stok not enough
+        if ($response->status() === 400) {
+             return back()->withErrors(['jumlah' => $response->json('message')])->withInput();
         }
 
-        // Create transaction
-        BarangKeluar::create($request->all());
-
-        // Update Stok
-        $barang->stok -= $request->jumlah;
-        $barang->save();
-
-        return redirect()->route('barang-keluar.index')->with('success', 'Transaksi barang keluar berhasil dicatat.');
+        return back()->with('error', 'Gagal mencatat transaksi.');
     }
 
-    public function destroy(BarangKeluar $barang_keluar)
+    public function destroy($id)
     {
-        // Revert stok
-        $barang = $barang_keluar->barang;
-        $barang->stok += $barang_keluar->jumlah;
-        $barang->save();
+        $response = Http::withToken($this->getToken())->delete($this->getApiUrl() . '/barang-keluar/' . $id);
 
-        $barang_keluar->delete();
-        
-        return redirect()->route('barang-keluar.index')->with('success', 'Transaksi barang keluar berhasil dibatalkan.');
+        if ($response->successful() && $response->json('success')) {
+            return redirect()->route('barang-keluar.index')->with('success', $response->json('message'));
+        }
+
+        return back()->with('error', 'Gagal membatalkan transaksi.');
     }
 }
